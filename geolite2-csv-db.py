@@ -203,7 +203,7 @@ def block_ip_save_mysql(con, blocks, ver_num):
 
         with con.cursor() as cursor:
             cursor.executemany(('INSERT INTO `t_blocks_ip` VALUES ('
-                            '%s, %s, inet6_aton(%s), inet6_aton(%s), '
+                            '%s, %s, ip_to_d(%s), ip_to_d(%s), '
                             '%s, %s, %s, %s, %s, %s, %s, %s, %s, %s'
                             ');'), vl)
 
