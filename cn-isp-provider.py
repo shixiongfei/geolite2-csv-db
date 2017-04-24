@@ -179,8 +179,6 @@ def parse_provider(loc):
                     
                     vl.append((ip, rec[0], rec[1], rec[2], prov))
                     
-                    time.sleep(0.05)    # do not too fast.
-                    
         print('{0} Providers: {1}'.format(p[0], len(vl)))
         
     return vl
