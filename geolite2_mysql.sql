@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS `t_blocks_ip` (
   `longitude` double DEFAULT NULL,
   `accuracy_radius` double DEFAULT NULL,
   `ver_num` int(10) unsigned NOT NULL,
-  PRIMARY KEY (`ip_type`,`ip_end`),
+  PRIMARY KEY (`ip_type`,`ip_end`, `ver_num`),
   KEY `geoname_id` (`geoname_id`),
   KEY `ip_start` (`ip_start`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
