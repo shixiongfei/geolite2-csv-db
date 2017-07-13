@@ -191,6 +191,8 @@ def parse_provider(loc):
                         netmask = int(32 - math.log(int(rec[4]), 2))
                     elif 'IPV6' == rec[2].upper():
                         netmask = int(rec[4])
+                    else:
+                        continue
                     
                     ip = rec[3] + '/{0}'.format(netmask)
                     whois = StringIO(ipwhois(ip))
