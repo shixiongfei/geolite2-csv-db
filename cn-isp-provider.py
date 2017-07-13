@@ -29,6 +29,7 @@ import os
 import sys
 import math
 import time
+import select
 import socket
 import chardet
 import pymysql
@@ -107,33 +108,60 @@ def download_delegated_file():
     return True
 
 def ipwhois(ip):
-    w = ''
-    
-    while True:
+    def _whois(ip):
+        s = None
+
         try:
-            w = ''
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            if 0 == s.connect_ex(('whois.apnic.net', 43)):
-                s.sendall((ip + '\r\n').encode())
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+            if 0 != s.connect_ex(('whois.apnic.net', 43)):
+                s.close()
+                print('Remote server can not connect. (whois: {0})'.format(ip))
+                return (False, None)
+
+            s.sendall((ip + '\r\n').encode())
+            s.setblocking(0)
+
+            times = 3
+            body = ''
+
+            while times > 0:
+                s_in, s_out, s_err = select.select([s], [], [], 10)  # wait 10s
+
+                if not s_in or 0 == len(s_in):
+                    times -= 1
+                    print('Socket recv timedout! (whois: {0})'.format(ip))
+                    continue
+
+                d = s.recv(1024)
                 
-                while True:
-                    d = s.recv(1024)
-                    
-                    if not d:
-                        break
-                    
-                    w += d.decode(chardet.detect(d)['encoding'])
-            else:
-                print('IP whois failed.')
-                    
-            s.close()
+                if not d:
+                    s.close()
+                    return (True, body)
+                
+                body += d.decode(chardet.detect(d)['encoding'])
             
-            break
+            print('Remote server has been lost! (whois: {0})'.format(ip))
+            s.close()
         except:
+            print('Socket error! (whois: {0})'.format(ip))
+            s.close()
+        return (False, None)
+    # -- End _whois() --
+
+    r = False
+    w = ''
+    t = 5
+
+    while not r and t > 0:
+        (r, w) = _whois(ip)
+
+        if not r:
+            t -= 1
             print('IP whois error, retrying.')
             time.sleep(1.0)
-            continue
-        
+
     return w
 
 def parse_provider(loc):
@@ -177,6 +205,7 @@ def parse_provider(loc):
                             prov = nn[1].strip(' ').strip('\n')
                             break
                     
+                    print('Whois: {0} {1} {2} {3} {4}'.format(ip, rec[0], rec[1], rec[2], prov))
                     vl.append((ip, rec[0], rec[1], rec[2], prov))
                     
         print('{0} Providers: {1}'.format(p[0], len(vl)))
