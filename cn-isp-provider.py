@@ -33,6 +33,7 @@ import select
 import socket
 import chardet
 import pymysql
+import ipaddress
 
 try:
     # for py3
@@ -195,6 +196,15 @@ def parse_provider(loc):
                         continue
                     
                     ip = rec[3] + '/{0}'.format(netmask)
+
+                    if PY3:
+                        ip_range = ipaddress.ip_network(ip)
+                    elif PY2:
+                        ip_range = ipaddress.ip_network(ip.decode('utf-8'))
+
+                    start_ip = ip_range[0]
+                    end_ip = ip_range[-1]
+
                     whois = StringIO(ipwhois(ip))
                     
                     for wline in whois:
@@ -207,8 +217,8 @@ def parse_provider(loc):
                             prov = nn[1].strip(' ').strip('\n')
                             break
                     
-                    print('Whois: {0} {1} {2} {3} {4}'.format(ip, rec[0], rec[1], rec[2], prov))
-                    vl.append((ip, rec[0], rec[1], rec[2], prov))
+                    print('Whois: {0} {1} {2} {3} {4} {5} {6}'.format(ip, start_ip, end_ip, rec[0], rec[1], rec[2], prov))
+                    vl.append((ip, str(start_ip), str(end_ip), rec[0], rec[1], rec[2], prov))
                     
         print('{0} Providers: {1}'.format(p[0], len(vl)))
         
@@ -229,13 +239,22 @@ def save_to_mysql(vl):
     try:
         with con.cursor() as cursor:
             cursor.executemany(('REPLACE INTO `t_providers` ('
-                                '`networks`, `registry`, `country`, `ip_type`, `provider`'
-                                ') VALUES (%s, %s, %s, %s, %s);'), vl)
+                                '`networks`, `ip_start`, `ip_end`, `registry`, `country`, `ip_type`, `provider`'
+                                ') VALUES (%s, ip_to_d(%s), ip_to_d(%s), %s, %s, %s, %s);'), vl)
         
         con.commit()
     except pymysql.MySQLError as e:
         print('Save providers to MySQL failed,', e)
     
+    try:
+        with con.cursor() as cursor:
+            cursor.execute('DELETE FROM `t_providers` WHERE `last_time` < (SELECT `createdate` FROM `t_version` ORDER BY `ver_num` DESC LIMIT 1);')
+            print('Clear providers: {0}'.format(con.affected_rows()))
+
+        con.commit()
+    except pymysql.MySQLError as e:
+        print('Clear providers MySQL failed,', e)
+
     con.close()
 
 def entry():

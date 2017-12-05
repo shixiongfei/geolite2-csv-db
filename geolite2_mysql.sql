@@ -30,20 +30,21 @@ BEGIN
 		SET ip_t = 'ipv6';
 	END IF;
 
-	SELECT
-		`geoname_id`, `ip_start` INTO geoid, ip_s
-	FROM `t_blocks_ip`
-	WHERE `ip_type` = ip_t AND `ip_end` >= ip_d AND `geoname_id` IS NOT NULL
-	LIMIT 1;
+    SELECT
+        `geoname_id`, `ip_start` INTO geoid, ip_s
+    FROM `t_blocks_ip`
+    WHERE `ip_end` >= ip_d AND `ip_type` = ip_t
+    LIMIT 1;
 
-	SET v_sql = concat(
-		'SELECT ',
-		'a.`network`, a.`ip_type`, a.`postal_code`, a.`latitude`, a.`longitude`, a.`accuracy_radius`, ',
-		'b.`locale_code`, b.`continent_code`, b.`continent_name`, b.`country_iso_code`, b.`country_name`, ',
-		'b.`city_name`, b.`metro_code`, b.`time_zone` ',
-		'FROM `t_blocks_ip` AS a LEFT JOIN `t_locations` AS b ON a.geoname_id = b.geoname_id ',
-		'WHERE a.`geoname_id` = ', geoid, ' AND a.`ip_start` = ', ip_s,' '
-	);
+    SET v_sql = concat(
+        'SELECT ',
+        'a.`network`, a.`ip_type`, a.`postal_code`, a.`latitude`, a.`longitude`, a.`accuracy_radius`, ',
+        'b.`locale_code`, b.`continent_code`, b.`continent_name`, b.`country_iso_code`, b.`country_name`, ',
+        'b.`city_name`, c.`provider`, b.`metro_code`, b.`time_zone` ',
+        'FROM `t_blocks_ip` AS a LEFT JOIN `t_locations` AS b ON a.`geoname_id` = b.`geoname_id` ',
+        'LEFT JOIN `t_providers` AS c ON ', ip_d, ' BETWEEN c.`ip_start` AND c.`ip_end` ',
+        'WHERE a.`geoname_id` = ', geoid, ' AND a.`ip_start` = ', ip_s,' '
+    );
 	
 	IF locale IS NOT NULL THEN
 		SET v_sql = concat(v_sql, 'AND b.`locale_code` = \'', locale, '\' ');
@@ -97,9 +98,9 @@ CREATE TABLE IF NOT EXISTS `t_blocks_ip` (
   `longitude` double DEFAULT NULL,
   `accuracy_radius` double DEFAULT NULL,
   `ver_num` int(10) unsigned NOT NULL,
-  PRIMARY KEY (`ip_type`,`ip_end`, `ver_num`),
-  KEY `geoname_id` (`geoname_id`),
-  KEY `ip_start` (`ip_start`)
+  PRIMARY KEY (`ip_start`),
+  INDEX `ip_end` (`ip_end`),
+  INDEX `geoname_id` (`geoname_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- Data exporting was unselected.

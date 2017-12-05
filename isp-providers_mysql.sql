@@ -6,12 +6,16 @@
 -- 导出  表 geolite2.t_providers 结构
 CREATE TABLE IF NOT EXISTS `t_providers` (
   `networks` varchar(64) NOT NULL,
+  `ip_start` DECIMAL(39,0) NOT NULL,
+  `ip_end` DECIMAL(39,0) NOT NULL,
   `registry` varchar(32) NOT NULL,
   `country` varchar(16) NOT NULL,
   `ip_type` varchar(8) NOT NULL,
   `provider` varchar(64) NOT NULL,
   `last_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`networks`)
+  PRIMARY KEY (`ip_start`),
+  INDEX `ip_end` (`ip_end`),
+  INDEX `last_time` (`last_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- 数据导出被取消选择。
