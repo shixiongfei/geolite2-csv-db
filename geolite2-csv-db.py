@@ -25,8 +25,17 @@
         http://shixf.com/
 '''
 
-import sys
 import os
+import sys
+import math
+import time
+import select
+import socket
+import chardet
+import pymysql
+import ipaddress
+import zipfile
+import csv
 
 try:
     # for py3
@@ -43,11 +52,6 @@ except:
     # for py2
     from StringIO import StringIO
 
-import zipfile
-import csv
-import ipaddress
-import pymysql
-
 
 mysql_config = {
     'host' : '127.0.0.1',
@@ -59,9 +63,20 @@ mysql_config = {
 
 geolite2_url = 'http://geolite.maxmind.com/download/geoip/database/GeoLite2-City-CSV.zip'
 
+provider_url = [
+    #('Afrinic', 'http://ftp.apnic.net/stats/afrinic/delegated-afrinic-extended-latest'),
+    ('Apnic', 'http://ftp.apnic.net/stats/apnic/delegated-apnic-extended-latest'),
+    #('Arin', 'http://ftp.arin.net/pub/stats/arin/delegated-arin-extended-latest'),
+    #('Iana', 'http://ftp.apnic.net/pub/stats/iana/delegated-iana-latest'),
+    #('Lacnic', 'http://ftp.apnic.net/stats/lacnic/delegated-lacnic-extended-latest'),
+    #('Ripencc', 'http://ftp.apnic.net/stats/ripe-ncc/delegated-ripencc-extended-latest')
+]
+
 
 _last_errmsg = ''
 _dl_progress = 0.0
+v = lambda a : a if '' != a else None
+
 
 if 2 == sys.version_info.major:
     reload(sys)
@@ -77,6 +92,7 @@ def _set_errmsg(msg):
     global _last_errmsg
     _last_errmsg = msg
 
+
 def rpthook(downloaded, blocksize, total):
     global _dl_progress
 
@@ -85,6 +101,65 @@ def rpthook(downloaded, blocksize, total):
     if progress >= _dl_progress:
         _dl_progress = _dl_progress + 0.1
         print('{0:.2%} '.format(progress))
+
+
+def ipwhois(ip):
+    def _whois(ip):
+        s = None
+
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+            if 0 != s.connect_ex(('whois.apnic.net', 43)):
+                s.close()
+                print('Remote server can not connect. (whois: {0})'.format(ip))
+                return (False, None)
+
+            s.sendall((ip + '\r\n').encode())
+            s.setblocking(0)
+
+            times = 3
+            body = ''
+
+            while times > 0:
+                s_in, s_out, s_err = select.select([s], [], [], 10)  # wait 10s
+
+                if not s_in or 0 == len(s_in):
+                    times -= 1
+                    print('Socket recv timedout! (whois: {0})'.format(ip))
+                    continue
+
+                d = s.recv(1024)
+                
+                if not d:
+                    s.close()
+                    return (True, body)
+                
+                body += d.decode(chardet.detect(d)['encoding'])
+            
+            print('Remote server has been lost! (whois: {0})'.format(ip))
+            s.close()
+        except:
+            print('Socket error! (whois: {0})'.format(ip))
+            s.close()
+        return (False, None)
+    # -- End _whois() --
+
+    r = False
+    w = ''
+    t = 5
+
+    while not r and t > 0:
+        (r, w) = _whois(ip)
+
+        if not r:
+            t -= 1
+            print('IP whois error, retrying.')
+            time.sleep(1.0)
+
+    return w
+
 
 def geolite2_download():
     global _dl_progress
@@ -105,8 +180,32 @@ def geolite2_download():
 
     return False
 
+
+def download_delegated_file():
+    global _dl_progress
+    global provider_url
+
+    for p in provider_url:
+        try:
+            print('Downloading {0}'.format(p[0]))
+            _dl_progress = 0.0
+            urlretrieve(p[1], os.path.basename(p[1]), rpthook)
+        except IOError as e:
+            print('IO Error: {0}'.format(e.strerror))
+            sys.exit(e.errno)
+        except HTTPError as e:
+            print('HTTP Error: {0} {1}'.format(e.code, e.reason))
+            sys.exit(e.errno)
+        except URLError as e:
+            print('URL Error: {0}'.format(e.reason))
+            sys.exit(e.errno)
+        
+    return True
+
+
 def file_extension(path):
   return os.path.splitext(path)[1]
+
 
 def geolite2_loadcsv():
     global geolite2_url
@@ -148,6 +247,63 @@ def geolite2_loadcsv():
 
     return None
 
+
+def parse_provider(ver_num):
+    global provider_url
+    
+    vl = []
+    
+    for p in provider_url:
+        print('Parsing {0}'.format(p))
+        
+        with open(os.path.basename(p[1]), 'rt') as fp:
+            for line in fp:
+                if '#' == line[0]:
+                    continue
+                
+                rec = line.split('|')
+                
+                if 'IPV4' == rec[2].upper():
+                    netmask = int(32 - math.log(int(rec[4]), 2))
+                elif 'IPV6' == rec[2].upper():
+                    netmask = int(rec[4])
+                else:
+                    continue
+                
+                ip = rec[3] + '/{0}'.format(netmask)
+
+                try:
+                    if PY3:
+                        ip_range = ipaddress.ip_network(ip)
+                    elif PY2:
+                        ip_range = ipaddress.ip_network(ip.decode('utf-8'))
+                except:
+                    print('Error IP: {0}'.format(ip))
+                    continue
+
+                start_ip = ip_range[0]
+                end_ip = ip_range[-1]
+
+                whois = StringIO(ipwhois(ip))
+                
+                for wline in whois:
+                    if wline[0] in ('%', ' ', '\r', '\n', ''):
+                        continue
+                    
+                    nn = wline.split(':')
+
+                    if 'netname' == nn[0]:
+                        prov = nn[1].strip(' ').strip('\n')
+                        break
+                
+                print('Whois: {0} {1} {2} {3} {4} {5} {6}'.format(ip, start_ip, end_ip, rec[0], rec[1], rec[2], prov))
+                vl.append((ip, str(start_ip), str(end_ip), rec[0], rec[1], rec[2], prov, ver_num))
+                    
+        print('{0} Providers: {1}'.format(p[0], len(vl)))
+        
+    return vl
+
+
 def get_mysql_conn():
     global mysql_config
     return pymysql.connect(host = mysql_config['host'],
@@ -157,8 +313,10 @@ def get_mysql_conn():
                            port = mysql_config['port'],
                            charset = 'utf8')
 
+
 def close_mysql_conn(con):
     con.close()
+
 
 def get_ver_num(con):
     print('Getting version number.')
@@ -175,7 +333,6 @@ def get_ver_num(con):
 
     return ver_num
 
-v = lambda a : a if '' != a else None
 
 def block_ip_save_mysql(con, blocks, ver_num):
     print('Saving blocks ip to MySQL.')
@@ -211,6 +368,7 @@ def block_ip_save_mysql(con, blocks, ver_num):
     except pymysql.MySQLError as e:
         print('Save blocks ip to MySQL failed,', e)
 
+
 def loc_lang_save_mysql(con, locations, ver_num):
     print('Saving locations lang to MySQL.')
     try:
@@ -238,6 +396,34 @@ def loc_lang_save_mysql(con, locations, ver_num):
     except pymysql.MySQLError as e:
         print('Save locations lang to MySQL failed,', e)
 
+
+def provider_save_mysql(con, vl):
+    print('Saving providers to MySQL.')
+    
+    try:
+        with con.cursor() as cursor:
+            cursor.executemany(('INSERT INTO `t_providers` VALUES ('
+                                '%s, ip_to_d(%s), ip_to_d(%s), %s, %s, %s, %s, %s'
+                                ');'), vl)
+        
+        con.commit()
+    except pymysql.MySQLError as e:
+        print('Save providers to MySQL failed,', e)
+
+
+def switch_to_newest(con):
+    print('Switch to newest version.')
+
+    try:
+        with con.cursor() as cursor:
+            cursor.execute('SELECT `newest_version`();')
+            result = cursor.fetchone()
+
+        con.commit()
+    except pymysql.MySQLError as e:
+        print('Switch to newest version failed,', e)
+
+
 def clear_old_version(con, ver_num):
     print('Cleaning outdated version.')
     try:
@@ -248,9 +434,13 @@ def clear_old_version(con, ver_num):
             cursor.execute('DELETE FROM `t_locations` WHERE ver_num < %s;', (ver_num))
             print('Clear locations: {0}'.format(con.affected_rows()))
 
+            cursor.execute('DELETE FROM `t_providers` WHERE ver_num < %s;', (ver_num))
+            print('Clear providers: {0}'.format(con.affected_rows()))
+
         con.commit()
     except:
         print('Clear data failed.')
+
 
 def geolite2_save_mysql(data):
     print('Saving to MySQL.')
@@ -261,8 +451,12 @@ def geolite2_save_mysql(data):
 
     if ver_num > 0:
         print('New Version: {0}'.format(ver_num))
+        vl = parse_provider(ver_num)
+
         block_ip_save_mysql(con, data['blocks'], ver_num)
         loc_lang_save_mysql(con, data['locations'], ver_num)
+        provider_save_mysql(con, vl)
+        switch_to_newest(con)
         clear_old_version(con, ver_num)
 
     close_mysql_conn(con)
@@ -272,15 +466,20 @@ def output_errmsg():
     global _last_errmsg
     print(_last_errmsg)
 
+
 def app_exit(msg, code):
     print(msg)
     if 0 != code:
         output_errmsg()
     sys.exit(code)
 
+
 if __name__ == '__main__':
     if not geolite2_download():
         app_exit('GeoLite2 data file download failed.', 1)
+
+    if not download_delegated_file():
+        app_exit('Download delegated file failed.', 1)
 
     ipdata = geolite2_loadcsv()
 
