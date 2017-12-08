@@ -404,6 +404,8 @@ def loc_lang_save_mysql(con, locations, ver_num):
 def provider_save_mysql(con, vl):
     print('Saving providers to MySQL.')
     
+    print('Providers: {0}'.format(len(vl)))
+
     try:
         with con.cursor() as cursor:
             cursor.executemany(('INSERT INTO `t_providers` VALUES ('
