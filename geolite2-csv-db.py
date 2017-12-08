@@ -318,9 +318,11 @@ def close_mysql_conn(con):
     con.close()
 
 
-def get_ver_num(con):
+def get_ver_num():
     print('Getting version number.')
     ver_num = -1
+
+    con = get_mysql_conn()
 
     try:
         with con.cursor() as cursor:
@@ -330,6 +332,8 @@ def get_ver_num(con):
         con.commit()
     except:
         print('Insert version to MySQL failed.')
+
+    close_mysql_conn(con)
 
     return ver_num
 
@@ -442,24 +446,34 @@ def clear_old_version(con, ver_num):
         print('Clear data failed.')
 
 
+def parse_and_save_providers(ver_num):
+    vl = parse_provider(ver_num)
+
+    con = get_mysql_conn()
+    
+    provider_save_mysql(con, vl)
+
+    close_mysql_conn(con)
+
+
 def geolite2_save_mysql(data):
     print('Saving to MySQL.')
 
-    con = get_mysql_conn()
-
-    ver_num = get_ver_num(con)
+    ver_num = get_ver_num()
 
     if ver_num > 0:
         print('New Version: {0}'.format(ver_num))
-        vl = parse_provider(ver_num)
+        
+        parse_and_save_providers(ver_num)
+
+        con = get_mysql_conn()
 
         block_ip_save_mysql(con, data['blocks'], ver_num)
         loc_lang_save_mysql(con, data['locations'], ver_num)
-        provider_save_mysql(con, vl)
         switch_to_newest(con)
         clear_old_version(con, ver_num)
 
-    close_mysql_conn(con)
+        close_mysql_conn(con)
 
 
 def output_errmsg():
