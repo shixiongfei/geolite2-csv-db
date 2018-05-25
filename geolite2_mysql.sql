@@ -23,19 +23,19 @@ BEGIN
 
   SET ip_d = ip_to_d(ip);
   SET ver_num = get_version();
-  
+
   IF IS_IPV4(ip) THEN
     SET ip_t = 'ipv4';
   END IF;
-  
+
   IF IS_IPV6(ip) THEN
     SET ip_t = 'ipv6';
   END IF;
-  
+
   IF locale IS NULL THEN
     SET locale = 'en';
   END IF;
-  
+
   SET locale = REPLACE(locale, ' ', '');
   SET locale = REPLACE(locale, ',', '\', \'');
 
@@ -57,7 +57,7 @@ BEGIN
   );
 
   SET @sqlcmd = v_sql;
-  
+
   PREPARE stmt FROM @sqlcmd;
   EXECUTE stmt;
   DEALLOCATE PREPARE stmt;
@@ -76,12 +76,12 @@ BEGIN
 	IF IS_IPV4(ip) THEN
 		RETURN INET_ATON(ip);
 	END IF;
-	
+
 	IF IS_IPV6(ip) THEN
 		RETURN CAST(CONV(SUBSTR(HEX(INET6_ATON(ip)), 1, 16), 16, 10) AS DECIMAL(39, 0)) * 18446744073709551616 +
 					CAST(CONV(SUBSTR(HEX(INET6_ATON(ip)), 17, 16), 16, 10) AS DECIMAL(39, 0));
 	END IF;
-	
+
 	RETURN NULL;
 
 END//
@@ -96,7 +96,7 @@ BEGIN
   DECLARE ver BIGINT UNSIGNED DEFAULT 0;
 
   SELECT `ver_num` INTO ver FROM `t_version` WHERE `activated` = 1 ORDER BY `ver_num` DESC LIMIT 1;
-  
+
   RETURN ver;
 
 END//
@@ -110,14 +110,14 @@ CREATE FUNCTION `newest_version`()
 BEGIN
   DECLARE cur_ver BIGINT UNSIGNED DEFAULT 0;
   DECLARE new_ver BIGINT UNSIGNED DEFAULT 0;
-  
+
   SET cur_ver = get_version();
-  
+
   SELECT `ver_num` INTO new_ver 
   FROM `t_version`
   ORDER BY `ver_num` DESC 
   LIMIT 1;
-  
+
   IF cur_ver >= new_ver THEN
     RETURN 0;
   END IF;
@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS `t_locations` (
   `city_name` varchar(128) DEFAULT NULL,
   `metro_code` varchar(64) DEFAULT NULL,
   `time_zone` varchar(128) DEFAULT NULL,
+  `is_in_european_union` INT(10) NULL DEFAULT NULL,
   `ver_num` int(10) unsigned NOT NULL,
   KEY `geoname_id` (`geoname_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
